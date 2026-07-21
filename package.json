@@ -4,7 +4,8 @@
   "type": "module",
   "exports": {
     ".": "./src/core/index.ts",
-    "./c": "./src/bindings/c/index.ts"
+    "./c": "./src/bindings/c/index.ts",
+    "./register": "./register.js"
   },
   "engines": {
     "node": ">=24.18.0"

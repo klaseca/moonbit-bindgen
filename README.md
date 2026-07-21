@@ -118,6 +118,16 @@ parser-specific rules remain in the adapter rather than in this configuration.
 
 ## Generating C bindings
 
+Run a TypeScript generator entry point with the package's Node registration
+module:
+
+```sh
+node --import moonbit-bindgen/register ./bindgen_example.ts
+```
+
+The registration module enables Node to load the erasable TypeScript sources
+shipped by `moonbit-bindgen`.
+
 The project adapter connects a declaration source, project configuration, and
 standard emitters:
 
