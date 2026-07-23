@@ -6,6 +6,7 @@ import type {
   ApiDeclarationInput,
   ApiModel,
   CField,
+  HeaderInclude,
   NamedTypeInput,
 } from '../../c-types.ts'
 
@@ -22,7 +23,7 @@ type StructInfo = Readonly<{
 
 type HeaderInput = Readonly<{
   path: string
-  include?: string
+  include?: HeaderInclude
   outputBase: string
   source: string
   emit?: boolean

@@ -177,6 +177,14 @@ The regular-expression parser is a replaceable declaration source. Naming and
 macro cleanup in this example are library-specific and therefore belong to the
 binding project rather than `moonbit-bindgen`.
 
+`headerInclude` may override the complete C include operand:
+
+```ts
+headerInclude: (file) => `<library/${file}>`
+```
+
+Without it, the source emits a quoted path relative to the generated C file.
+
 The standard emitters generate per-header `*_gen.mbt` declarations and matching
 `*_stub_gen.c` files. They also add shared C-string and pointer helpers when the
 lowered API needs them; these helpers are ABI dependencies, not configuration

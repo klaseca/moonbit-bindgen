@@ -7,6 +7,7 @@ import type {
   ApiModel,
   ApiModelInput,
   ApiSource,
+  HeaderInclude,
   SourceContext,
 } from './c-types.ts'
 
@@ -53,7 +54,7 @@ export function loadApiSources(sources: readonly ApiSource[], context: SourceCon
     string,
     {
       path: string
-      include: string
+      include: HeaderInclude
       outputBase: string
       emit: boolean
       declarations: (ApiDeclarationInput & { source?: string })[]
@@ -71,7 +72,7 @@ export function loadApiSources(sources: readonly ApiSource[], context: SourceCon
       if (!current) {
         headers.set(header.path, {
           path: header.path,
-          include: header.include ?? header.path,
+          include: header.include ?? `"${header.path}"`,
           outputBase: header.outputBase,
           emit: header.emit ?? true,
           declarations: header.declarations.map((declaration) => ({

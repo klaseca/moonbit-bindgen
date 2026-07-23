@@ -103,7 +103,7 @@ export function createApiModel(input: ApiModelInput): ApiModel {
 
     return Object.freeze({
       path: header.path,
-      include: header.include ?? header.path,
+      include: header.include ?? `"${header.path}"`,
       outputBase: header.outputBase,
       emit: header.emit ?? true,
       declarations: Object.freeze(normalizedDeclarations),

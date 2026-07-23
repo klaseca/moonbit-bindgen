@@ -72,9 +72,11 @@ export type ApiDeclarationInput =
   | Omit<OpaqueTypeDeclaration, 'header'>
   | Omit<ValueStructDeclaration, 'header'>
 
+export type HeaderInclude = `<${string}>` | `"${string}"`
+
 export type ApiHeader = Readonly<{
   path: string
-  include: string
+  include: HeaderInclude
   outputBase: string
   emit: boolean
   declarations: readonly ApiDeclaration[]
@@ -82,7 +84,7 @@ export type ApiHeader = Readonly<{
 
 export type ApiHeaderInput = Readonly<{
   path: string
-  include?: string
+  include?: HeaderInclude
   outputBase: string
   emit?: boolean
   declarations: readonly ApiDeclarationInput[]
@@ -334,7 +336,7 @@ export type LoweredValueStruct = ValueStructDeclaration &
 
 export type LoweredHeader = Readonly<{
   path: string
-  include: string
+  include: HeaderInclude
   outputBase: string
   constants: readonly ConstantDeclaration[]
   functions: readonly LoweredFunction[]

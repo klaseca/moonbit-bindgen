@@ -31,6 +31,7 @@ export type {
   EmitterOptions,
   FunctionConfigInput,
   GeneratorConfigInput,
+  HeaderInclude,
   LoweredFunction,
   LoweredHeader,
   LoweredType,

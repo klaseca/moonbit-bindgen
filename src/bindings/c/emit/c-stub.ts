@@ -573,7 +573,7 @@ export function createCStubEmitter(options: EmitterOptions = {}): Emitter {
       for (const fn of header.functions) emitFunction(body, fn, binding)
 
       const lines = generatedHeader(options.comment)
-      lines.push(`#include "${header.include}"`)
+      lines.push(`#include ${header.include}`)
       lines.push('#include <moonbit.h>')
       if (usesStdint(body)) lines.push('#include <stdint.h>')
       if (usesStddef(body) || headerNeedsStddef(header)) lines.push('#include <stddef.h>')

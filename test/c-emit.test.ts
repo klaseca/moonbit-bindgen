@@ -13,6 +13,7 @@ test('built-in emitters generate MoonBit externs and C stubs', () => {
     headers: [
       {
         path: 'SDL_video.h',
+        include: '<SDL3/SDL_video.h>',
         outputBase: 'video',
         declarations: [
           { kind: 'opaque-type', cName: 'SDL_Window' },
@@ -93,7 +94,7 @@ test('built-in emitters generate MoonBit externs and C stubs', () => {
     /pub extern "c" fn create_window\(title : Bytes, width : Int, height : Int\) -> Window = "moonbit_sdl_create_window"/,
   )
   assert.match(files.get('video_stub_gen.c')!, /moonbit_make_external_object/)
-  assert.match(files.get('video_stub_gen.c')!, /#include "SDL_video\.h"/)
+  assert.match(files.get('video_stub_gen.c')!, /#include <SDL3\/SDL_video\.h>/)
   assert.match(files.get('video_stub_gen.c')!, /moonbit_sdl_window_resource_t/)
   assert.match(
     files.get('video_stub_gen.c')!,
@@ -108,4 +109,5 @@ test('built-in emitters generate MoonBit externs and C stubs', () => {
     /pub fn Rect::Rect\(x : Int, y : Int, w : Int, h : Int\)/,
   )
   assert.match(files.get('rect_stub_gen.c')!, /moonbit_sdl_rect_make/)
+  assert.match(files.get('rect_stub_gen.c')!, /#include "SDL_rect\.h"/)
 })

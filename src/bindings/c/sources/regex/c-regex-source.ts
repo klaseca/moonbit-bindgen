@@ -5,11 +5,11 @@ import { normalizeCType } from './c-regex-type.ts'
 import { parseCHeadersWithRegex, stripCComments } from './c-regex-parser.ts'
 import { createApiSource } from '../../c-source-plugin.ts'
 import type { NormalizeCType, RegexParserInput } from './c-regex-parser.ts'
-import type { ApiSource, GeneratorConfigInput } from '../../c-types.ts'
+import type { ApiSource, GeneratorConfigInput, HeaderInclude } from '../../c-types.ts'
 
 type LoadedHeader = Readonly<{
   path: string
-  include: string
+  include: HeaderInclude
   outputBase: string
   source: string
   emit: boolean
@@ -17,6 +17,7 @@ type LoadedHeader = Readonly<{
 
 export type RegexCSourceOptions = Readonly<{
   headerOutputBase: (file: string) => string
+  headerInclude?: (file: string) => HeaderInclude
   prepareType?: (type: string) => string
   constantType?: RegexParserInput['constantType']
   functionPattern?: RegExp
@@ -61,7 +62,8 @@ function loadHeaders(
     const source = readFileSync(path, 'utf8')
     headers.set(file, {
       path: file,
-      include: relative(outputDir, path).replaceAll('\\', '/'),
+      include:
+        options.headerInclude?.(file) ?? `"${relative(outputDir, path).replaceAll('\\', '/')}"`,
       outputBase: options.headerOutputBase(file),
       source,
       emit,
