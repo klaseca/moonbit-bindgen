@@ -17,6 +17,7 @@ test('built-in emitters generate MoonBit externs and C stubs', () => {
         outputBase: 'video',
         declarations: [
           { kind: 'opaque-type', cName: 'SDL_Window' },
+          { kind: 'opaque-type', cName: 'SDL_Unmanaged' },
           {
             kind: 'function',
             cName: 'SDL_CreateWindow',
@@ -86,8 +87,17 @@ test('built-in emitters generate MoonBit externs and C stubs', () => {
 
   assert.deepEqual(
     [...files.keys()],
-    ['video_gen.mbt', 'video_stub_gen.c', 'rect_gen.mbt', 'rect_stub_gen.c'],
+    [
+      'video_gen.mbt',
+      'video_stub_gen.c',
+      'pointer_gen.mbt',
+      'pointer_stub_gen.c',
+      'rect_gen.mbt',
+      'rect_stub_gen.c',
+    ],
   )
+  assert.match(files.get('pointer_gen.mbt')!, /pub fn Pointer::null\(\) -> Pointer/)
+  assert.match(files.get('pointer_stub_gen.c')!, /void \*moonbit_sdl_pointer_null\(void\)/)
   assert.match(files.get('video_gen.mbt')!, /pub type Window/)
   assert.match(
     files.get('video_gen.mbt')!,
