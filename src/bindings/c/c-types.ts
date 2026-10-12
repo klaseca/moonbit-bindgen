@@ -6,7 +6,7 @@ export type CParam = Readonly<{
   type: CType
 }>
 
-export type CField = CParam
+export type CField = CParam & Readonly<{ array?: boolean }>
 
 export type AccessorDeclaration = Readonly<{
   fieldPath: readonly string[]
@@ -56,6 +56,7 @@ export type ValueStructDeclaration = DeclarationBase &
     kind: 'value-struct'
     fields: readonly CField[]
     accessors?: readonly AccessorDeclaration[]
+    setters?: readonly AccessorDeclaration[]
   }>
 
 export type ApiDeclaration =
@@ -115,6 +116,7 @@ export type ScalarType = Readonly<{
 export type NamedTypeInput = Readonly<{
   moonbit?: string
   accessors?: Readonly<Record<string, string | Readonly<{ name?: string; type?: string }>>>
+  setters?: Readonly<Record<string, string>>
 }>
 
 export type NamedType = NamedTypeInput & Readonly<{ cName: string }>
@@ -331,6 +333,8 @@ export type LoweredFunction = Readonly<{
 export type LoweredValueStruct = ValueStructDeclaration &
   Readonly<{
     accessors: readonly (AccessorDeclaration &
+      Readonly<{ cType: string; moonbit: string; kind: AbiKindValue }>)[]
+    setters: readonly (AccessorDeclaration &
       Readonly<{ cType: string; moonbit: string; kind: AbiKindValue }>)[]
   }>
 

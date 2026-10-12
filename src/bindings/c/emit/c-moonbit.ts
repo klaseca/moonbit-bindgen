@@ -132,6 +132,22 @@ function emitValueStruct(lines: string[], declaration: LoweredValueStruct, bindi
       lines.push('}')
     })
   }
+  for (const setter of declaration.setters) {
+    const setterName = `${baseName}_${setter.name}`
+    emitBlock(lines, () => {
+      lines.push('#borrow(bytes)')
+      lines.push(
+        `extern "c" fn ${setterName}(bytes : Bytes, value : ${setter.moonbit}) -> Unit = "${cSymbol(binding, setterName)}"`,
+      )
+    })
+    emitBlock(lines, () => {
+      lines.push(
+        `pub fn ${typeName}::${setter.name}(self : Self, value : ${setter.moonbit}) -> Unit {`,
+      )
+      lines.push(`  ${setterName}(self.to_bytes(), value)`)
+      lines.push('}')
+    })
+  }
 }
 
 function emitOpaqueType(

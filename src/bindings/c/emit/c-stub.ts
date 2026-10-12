@@ -478,6 +478,16 @@ function emitValueStruct(lines: string[], declaration: LoweredValueStruct, bindi
     lines.push('}')
     lines.push('')
   }
+  for (const setter of declaration.setters) {
+    const setterName = `${baseName}_${setter.name}`
+    lines.push('MOONBIT_FFI_EXPORT')
+    lines.push(
+      `void ${cSymbol(binding, setterName)}(moonbit_bytes_t self, ${setter.cType} value) {`,
+    )
+    lines.push(`  ((${declaration.cName} *)self)->${setter.fieldPath.join('.')} = value;`)
+    lines.push('}')
+    lines.push('')
+  }
 }
 
 function valueStructNeedsCStringHelper(declaration: LoweredValueStruct): boolean {

@@ -1,6 +1,6 @@
 import { parseCType, normalizeCType } from './c-regex-type.ts'
 import { createApiModel } from '../../c-model.ts'
-import type { CType } from '../../c-type.ts'
+import { hasCQualifier, type CType } from '../../c-type.ts'
 import type {
   AccessorDeclaration,
   ApiDeclarationInput,
@@ -92,7 +92,11 @@ function parseFieldDeclarator(
   }
   const name = text.replace(/\[[^\]]*\]/g, '').trim()
   if (!/^[A-Za-z_]\w*$/.test(name)) return undefined
-  return { name, type: parseCType(normalizeType(`${baseType}${pointer}`)) }
+  return {
+    name,
+    type: parseCType(normalizeType(`${baseType}${pointer}`)),
+    ...(text.includes('[') ? { array: true } : {}),
+  }
 }
 
 function parseFields(body: string, normalizeType: NormalizeCType): CField[] {
@@ -168,6 +172,7 @@ function resolveFieldPathType(
   structs: Map<string, StructInfo>,
   cName: string,
   fieldPath: readonly string[],
+  writable = false,
 ): CType | undefined {
   let currentType = cName
   for (let index = 0; index < fieldPath.length; index += 1) {
@@ -175,7 +180,11 @@ function resolveFieldPathType(
     if (segment === undefined) return undefined
     const field = structs.get(currentType)?.fieldsByName.get(segment)
     if (!field) return undefined
+    if (writable && (field.array || hasCQualifier(field.type, 'const'))) {
+      throw new Error(`${cName}.${fieldPath.join('.')}: setters require writable scalar fields`)
+    }
     if (index === fieldPath.length - 1) return field.type
+    if (writable && field.type.pointers.length !== 0) return undefined
     currentType = field.type.name
   }
   return undefined
@@ -219,6 +228,27 @@ function buildAccessors(
       })
     }
     result.set(cName, accessors)
+  }
+  return result
+}
+
+function buildSetters(
+  structs: Map<string, StructInfo>,
+  valueStructs: Readonly<Record<string, NamedTypeInput>>,
+): Map<string, readonly AccessorDeclaration[]> {
+  const result = new Map<string, readonly AccessorDeclaration[]>()
+  for (const [cName, config] of Object.entries(valueStructs)) {
+    const setters: AccessorDeclaration[] = []
+    for (const [field, name] of Object.entries(config.setters ?? {})) {
+      const fieldPath = field.split('.')
+      if (fieldPath.some((segment) => !/^[A-Za-z_]\w*$/.test(segment))) {
+        throw new Error(`${cName}.${field}: invalid setter field path`)
+      }
+      const type = resolveFieldPathType(structs, cName, fieldPath, true)
+      if (!type) throw new Error(`${cName}.${field}: cannot resolve setter type`)
+      setters.push({ fieldPath, name, type })
+    }
+    result.set(cName, setters)
   }
   return result
 }
@@ -355,6 +385,7 @@ export function parseCHeadersWithRegex(input: RegexParserInput): ApiModel {
     options.accessorName,
   )
   const selectedStructs = new Set(Object.keys(options.valueStructs))
+  const setters = buildSetters(structs, options.valueStructs)
 
   return createApiModel({
     headers: headers.map((header) => ({
@@ -374,6 +405,7 @@ export function parseCHeadersWithRegex(input: RegexParserInput): ApiModel {
             cName: declaration.cName,
             fields: declaration.kind === 'struct' ? declaration.fields : [],
             accessors: accessors.get(declaration.cName) ?? [],
+            setters: setters.get(declaration.cName) ?? [],
           })),
         ...parseDefineConstants(header.source, options),
         ...parseEnumConstants(header.stripped, options),

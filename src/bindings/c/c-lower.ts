@@ -312,6 +312,14 @@ function validateValueStructs(model: ApiModel, config: NormalizedConfig, errors:
   }
 }
 
+function isConstType(type: CType, model: ApiModel, seen = new Set<string>()): boolean {
+  if (hasCQualifier(type, 'const')) return true
+  const alias = model.declarations.get(type.name)
+  if (alias?.kind !== 'alias' || !alias.type || seen.has(type.name)) return false
+  seen.add(type.name)
+  return isConstType(alias.type, model, seen)
+}
+
 function lowerValueStruct(
   declaration: ValueStructDeclaration,
   context: LoweringContext,
@@ -335,7 +343,45 @@ function lowerValueStruct(
       }),
     )
   }
-  return Object.freeze({ ...declaration, accessors: Object.freeze(accessors) })
+  const setters: LoweredValueStruct['setters'][number][] = []
+  const methodNames = new Set([
+    ...declaration.fields.map((field) => field.name),
+    ...accessors.map((accessor) => accessor.name),
+    'to_bytes',
+    'make',
+  ])
+  for (const setter of declaration.setters ?? []) {
+    const lowered = lowerType(setter.type, 'param', context)
+    if (
+      !lowered ||
+      lowered.kind !== AbiKind.Direct ||
+      lowered.moonbit === 'Unit' ||
+      isConstType(setter.type, context.model)
+    ) {
+      errors.push(
+        `${declaration.cName}.${setter.fieldPath.join('.')}: setters require writable scalar fields (${renderCType(setter.type)})`,
+      )
+      continue
+    }
+    if (methodNames.has(setter.name)) {
+      errors.push(`${declaration.cName}: duplicate value struct method ${setter.name}`)
+      continue
+    }
+    methodNames.add(setter.name)
+    setters.push(
+      Object.freeze({
+        ...setter,
+        cType: lowered.cType,
+        moonbit: lowered.moonbit,
+        kind: lowered.kind,
+      }),
+    )
+  }
+  return Object.freeze({
+    ...declaration,
+    accessors: Object.freeze(accessors),
+    setters: Object.freeze(setters),
+  })
 }
 
 function validateResourceReturnLifetime(

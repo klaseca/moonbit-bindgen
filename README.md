@@ -60,7 +60,7 @@ The main options are:
 - `resources` describes opaque native resources, their release/retain functions,
   and ordinary return lifetime.
 - `valueStructs` selects C structs represented as MoonBit value wrappers and may
-  configure field accessors.
+  configure field accessors and explicit scalar setters.
 - `renames` applies explicit function or type names after ordinary prefix
   removal.
 - `typeOverrides` is the escape hatch for a library- or target-specific scalar
@@ -77,6 +77,23 @@ zero-based C parameter index. The generated wrapper keeps that owner alive.
 Fundamental C scalar types are handled by the C lowering implementation. A
 declaration source should emit aliases for typedefs; aliases are resolved
 recursively before `typeOverrides` is considered.
+
+Value-struct setters are opt-in and work with nested struct or union members:
+
+```ts
+valueStructs: {
+  example_event_t: {
+    accessors: { 'user.code': 'user_code' },
+    setters: { 'user.code': 'set_user_code' },
+  },
+}
+```
+
+This emits a `set_user_code(value)` method and a borrowed C stub that assigns the
+native field. Field types come from the headers; sizes and offsets remain the
+C compiler's responsibility. Setters support writable scalar fields only;
+pointers, arrays, aggregate fields, and `const` fields are rejected. Callers must
+select the appropriate union case before assigning its payload.
 
 ### JSON configuration
 
