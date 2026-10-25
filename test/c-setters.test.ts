@@ -53,14 +53,14 @@ test('scalar union setters resolve typedefs and nested fields in both emitters',
   const stub = files.get('events_stub_gen.c')!
   assert.match(
     mbt,
-    /#borrow\(bytes\)\nextern "c" fn event_set_user_code\(bytes : Bytes, value : Int\) -> Unit/,
+    /#borrow\(bytes\)\nextern "c" fn event_set_user_code\(bytes : Bytes, value : Int32\) -> Unit/,
   )
-  assert.match(mbt, /pub fn Event::set_user_code\(self : Self, value : Int\) -> Unit/)
-  assert.match(mbt, /pub fn Event::set_event_type\(self : Self, value : UInt\)/)
+  assert.match(mbt, /pub fn Event::set_user_code\(self : Self, value : Int32\) -> Unit/)
+  assert.match(mbt, /pub fn Event::set_event_type\(self : Self, value : UInt32\)/)
   assert.match(mbt, /pub fn Event::set_user_enabled\(self : Self, value : Bool\)/)
   assert.match(
     stub,
-    /void moonbit_app_event_set_event_type\(moonbit_bytes_t self, app_type_t value\)/,
+    /void moonbit_app_event_set_event_type\(moonbit_bytes_t self, uint32_t value\)/,
   )
   assert.match(stub, /\(\(app_event_t \*\)self\)->user\.window_id = value;/)
   assert.match(stub, /\(\(app_event_t \*\)self\)->user\.code = value;/)

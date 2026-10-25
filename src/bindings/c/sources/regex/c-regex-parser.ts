@@ -363,12 +363,12 @@ export function parseCHeadersWithRegex(input: RegexParserInput): ApiModel {
     functions: new Set(input.functions ?? []),
     valueStructs: input.valueStructs ?? {},
     constantPrefixes: input.constantPrefixes ?? [],
-    constantType: input.constantType ?? (() => 'UInt'),
+    constantType: input.constantType ?? (() => 'UInt32'),
     accessorName:
       input.accessorName ??
       ((cName, field) => `${cName.toLowerCase()}_${field.replaceAll('.', '_')}`),
     functionPattern: input.functionPattern ?? /extern\s+(.*?)\s+([A-Za-z_]\w*)\s*\((.*?)\)\s*;/g,
-    enumAliasType: input.enumAliasType ?? (() => 'Int'),
+    enumAliasType: input.enumAliasType ?? (() => 'Int32'),
     prepareFunctionSource: input.prepareFunctionSource ?? stripCComments,
   }
   const headers = input.headers.map((header) => ({
