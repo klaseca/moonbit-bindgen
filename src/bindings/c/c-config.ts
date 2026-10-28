@@ -73,7 +73,13 @@ function normalizeNamedTypes(
       if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
         throw new Error(`${path}.${cName} must be an object`)
       }
-      for (const [field, name] of objectEntries(entry.setters, `${path}.${cName}.setters`)) {
+      if (entry.init !== undefined && entry.init !== 'fields' && entry.init !== 'zero') {
+        throw new Error(`${path}.${cName}.init must be "fields" or "zero"`)
+      }
+      for (const [field, name] of objectEntries(
+        entry.setters === true ? undefined : entry.setters,
+        `${path}.${cName}.setters`,
+      )) {
         if (typeof name !== 'string' || !/^[a-z_][A-Za-z0-9_]*$/.test(name)) {
           throw new Error(`${path}.${cName}.setters.${field} must be a method name`)
         }

@@ -93,6 +93,8 @@ test('built-in emitters generate MoonBit externs and C stubs', () => {
       'video_stub_gen.c',
       'pointer_gen.mbt',
       'pointer_stub_gen.c',
+      'value_gen.mbt',
+      'value_stub_gen.c',
       'rect_gen.mbt',
       'rect_stub_gen.c',
     ],
@@ -113,7 +115,10 @@ test('built-in emitters generate MoonBit externs and C stubs', () => {
   )
   assert.match(files.get('video_stub_gen.c')!, /int w_value = 0;/)
   assert.match(files.get('video_stub_gen.c')!, /if \(w != NULL\) \*w = w_value;/)
-  assert.match(files.get('video_gen.mbt')!, /extern "c" fn use_rect_ffi\(rect : Bytes\) -> Bool/)
+  assert.match(
+    files.get('video_gen.mbt')!,
+    /extern "c" fn use_rect_ffi\(rect : Bytes, rect_offset : Int32\) -> Bool/,
+  )
   assert.match(files.get('video_gen.mbt')!, /pub fn use_rect\(rect : Rect\) -> Bool/)
   assert.match(
     files.get('rect_gen.mbt')!,
@@ -133,6 +138,8 @@ test('16-bit scalars use 32-bit FFI types through typedefs and output parameters
         path: 'app.h',
         outputBase: 'scalars',
         source: `
+typedef signed __int16 int16_t;
+typedef unsigned __int16 uint16_t;
 typedef int16_t app_signed_t;
 typedef uint16_t app_unsigned_t;
 typedef app_signed_t app_signed_alias_t;
@@ -185,9 +192,18 @@ extern void app_read16(app_signed_alias_t *signed_value, app_unsigned_alias_t *u
   assert.match(stub, /if \(signed_value != NULL\) \*signed_value = signed_value_value;/)
   assert.match(stub, /if \(unsigned_value != NULL\) \*unsigned_value = unsigned_value_value;/)
   assert.match(mbt, /fn Sample::Sample\(signed_value : Int32, unsigned_value : UInt32\)/)
-  assert.match(stub, /moonbit_app_sample_make\(int32_t signed_value, uint32_t unsigned_value\)/)
-  assert.match(stub, /int32_t moonbit_app_sample_signed_value\(moonbit_bytes_t self\)/)
-  assert.match(stub, /uint32_t moonbit_app_sample_unsigned_value\(moonbit_bytes_t self\)/)
-  assert.match(stub, /moonbit_app_sample_set_signed\(moonbit_bytes_t self, int32_t value\)/)
-  assert.match(stub, /moonbit_app_sample_set_unsigned\(moonbit_bytes_t self, uint32_t value\)/)
+  assert.match(
+    stub,
+    /moonbit_app_sample_make\(int32_t arg_signed_value, uint32_t arg_unsigned_value\)/,
+  )
+  const helpers = files.get('value_stub_gen.c')!
+  assert.match(files.get('value_gen.mbt')!, /\[u16le\(value\)\]/)
+  assert.match(helpers, /moonbit_app_value_write_bits\(/)
+  assert.match(helpers, /uint16_t value = \(uint16_t\)bits;/)
+  assert.doesNotMatch(helpers, /_as_/)
+  assert.doesNotMatch(helpers, /__int16/)
+  assert.doesNotMatch(
+    stub,
+    /moonbit_app_sample_(signed_value|unsigned_value|set_signed|set_unsigned)\(/,
+  )
 })

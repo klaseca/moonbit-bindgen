@@ -90,6 +90,7 @@ export function wrapperNeedsBytesParam(param: LoweredParam): boolean {
 export function directExternParam(param: LoweredParam): string[] {
   const type = wrapperNeedsBytesParam(param) ? 'Bytes' : param.lowered.moonbit
   const result = [`${param.name} : ${type}`]
+  if (param.lowered.kind === AbiKind.ValueStruct) result.push(`${param.name}_offset : Int32`)
   if (param.lowered.kind === AbiKind.ValueStruct && param.lowered.nullable) {
     result.push(`has_${param.name} : Bool`)
   }

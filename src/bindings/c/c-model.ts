@@ -30,6 +30,13 @@ function validateDeclaration(declaration: ApiDeclarationInput, header: string): 
     }
   }
   if (declaration.kind === 'value-struct') {
+    if (
+      declaration.aggregateKind !== undefined &&
+      declaration.aggregateKind !== 'struct' &&
+      declaration.aggregateKind !== 'union'
+    ) {
+      throw new Error(`${header}:${declaration.cName}: aggregateKind must be "struct" or "union"`)
+    }
     if (!Array.isArray(declaration.fields)) {
       throw new Error(`${header}:${declaration.cName}: value struct is missing fields`)
     }

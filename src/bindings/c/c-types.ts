@@ -54,6 +54,7 @@ export type OpaqueTypeDeclaration = DeclarationBase &
 export type ValueStructDeclaration = DeclarationBase &
   Readonly<{
     kind: 'value-struct'
+    aggregateKind?: 'struct' | 'union'
     fields: readonly CField[]
     accessors?: readonly AccessorDeclaration[]
     setters?: readonly AccessorDeclaration[]
@@ -115,8 +116,9 @@ export type ScalarType = Readonly<{
 
 export type NamedTypeInput = Readonly<{
   moonbit?: string
+  init?: 'fields' | 'zero'
   accessors?: Readonly<Record<string, string | Readonly<{ name?: string; type?: string }>>>
-  setters?: Readonly<Record<string, string>>
+  setters?: true | Readonly<Record<string, string>>
 }>
 
 export type NamedType = NamedTypeInput & Readonly<{ cName: string }>
@@ -330,12 +332,22 @@ export type LoweredFunction = Readonly<{
   returnType: LoweredType
 }>
 
-export type LoweredValueStruct = ValueStructDeclaration &
+export type LoweredValueStruct = Omit<ValueStructDeclaration, 'accessors' | 'setters'> &
   Readonly<{
-    accessors: readonly (AccessorDeclaration &
-      Readonly<{ cType: string; moonbit: string; kind: AbiKindValue }>)[]
-    setters: readonly (AccessorDeclaration &
-      Readonly<{ cType: string; moonbit: string; kind: AbiKindValue }>)[]
+    constructorFields: readonly LoweredField[]
+    accessors: readonly LoweredField[]
+    setters: readonly LoweredField[]
+  }>
+
+export type LoweredField = AccessorDeclaration &
+  Readonly<{
+    cType: string
+    moonbit: string
+    kind: AbiKindValue
+    nativeCType: string
+    storageCType: string
+    storageKind?: 'integer' | 'bool' | 'float' | 'double'
+    nativeAccess: boolean
   }>
 
 export type LoweredHeader = Readonly<{

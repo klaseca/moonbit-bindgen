@@ -1,5 +1,5 @@
-import { AbiKind, lowerType } from '../c-lower.ts'
-import { renderCType } from '../c-type.ts'
+import { AbiKind } from '../c-lower.ts'
+import { valueLayoutFields } from './c-value-common.ts'
 import {
   cReturnType,
   cStringHelperSymbol,
@@ -15,7 +15,6 @@ import {
 } from './c-common.ts'
 import type {
   Binding,
-  CField,
   Emitter,
   EmitterOptions,
   LoweredFunction,
@@ -37,35 +36,10 @@ type ResourceUsage = {
   nativeOps: boolean
 }
 
-function valueStructFieldType(
-  field: CField,
-  declaration: LoweredValueStruct,
-  binding: Binding,
-): string {
-  const lowered = lowerType(field.type, 'return', {
-    model: binding.model,
-    config: {
-      typeOverrides: binding.typeOverrides,
-      resources: binding.resources,
-      valueStructs: binding.valueStructs,
-      namePrefixes: binding.namePrefixes,
-      typeNamePrefixes: binding.typeNamePrefixes,
-      typeRenames: binding.typeRenames,
-      symbolPrefix: binding.symbolPrefix,
-    },
-  })
-  if (!lowered || (lowered.kind !== AbiKind.Direct && lowered.kind !== AbiKind.OpaquePointer)) {
-    throw new Error(
-      `${declaration.cName}.${field.name}: unsupported value struct field type ${renderCType(field.type)}`,
-    )
-  }
-  return lowered.cType
-}
-
 function cParamDeclarations(param: LoweredParam): string[] {
   if (!isMoonBitParam(param)) return []
   if (param.lowered.kind === AbiKind.ValueStruct) {
-    const result = [`moonbit_bytes_t ${param.name}`]
+    const result = [`moonbit_bytes_t ${param.name}`, `int32_t ${param.name}_offset`]
     if (param.lowered.nullable) result.push(`int32_t has_${param.name}`)
     return result
   }
@@ -89,9 +63,9 @@ function callArgument(param: LoweredParam): string {
       return `((${param.lowered.nativeCType})${param.name})`
     case AbiKind.ValueStruct:
       if (param.lowered.nullable) {
-        return `has_${param.name} ? ((${param.lowered.nativeCType})${param.name}) : NULL`
+        return `has_${param.name} ? ((${param.lowered.nativeCType})(${param.name} + ${param.name}_offset)) : NULL`
       }
-      return `((${param.lowered.nativeCType})${param.name})`
+      return `((${param.lowered.nativeCType})(${param.name} + ${param.name}_offset))`
     case AbiKind.OutParameter:
       return `&${param.name}_value`
     default:
@@ -441,57 +415,99 @@ function emitCStringHelper(lines: string[], binding: Binding): void {
 }
 
 function emitValueStruct(lines: string[], declaration: LoweredValueStruct, binding: Binding): void {
-  const baseName = valueStructBaseName(binding, declaration)
-  const fields = declaration.fields.map((field) => ({
-    ...field,
-    cType: valueStructFieldType(field, declaration, binding),
-  }))
-  const params = fields.map((field) => `${field.cType} ${field.name}`).join(', ')
-  lines.push('MOONBIT_FFI_EXPORT')
-  lines.push(`moonbit_bytes_t ${cSymbol(binding, `${baseName}_make`)}(${params || 'void'}) {`)
-  lines.push(`  ${declaration.cName} value = { 0 };`)
-  for (const field of fields) lines.push(`  value.${field.name} = ${field.name};`)
-  lines.push(`  moonbit_bytes_t bytes = moonbit_make_bytes(sizeof(${declaration.cName}), 0);`)
-  lines.push(`  memcpy(bytes, &value, sizeof(${declaration.cName}));`)
-  lines.push('  return bytes;')
-  lines.push('}')
-  lines.push('')
-
-  const accessors = [
-    ...fields.map((field) => ({
-      fieldPath: [field.name],
-      name: field.name,
-      cType: field.cType,
-    })),
-    ...(declaration.accessors ?? []),
-  ]
-  for (const accessor of accessors) {
-    const accessorName = `${baseName}_${accessor.name}`
-    lines.push('MOONBIT_FFI_EXPORT')
-    lines.push(`${accessor.cType} ${cSymbol(binding, accessorName)}(moonbit_bytes_t self) {`)
-    const expression = `((${declaration.cName} *)self)->${accessor.fieldPath.join('.')}`
-    if ('kind' in accessor && accessor.kind === 'cstring-return') {
-      lines.push(`  return ${cStringHelperSymbol(binding)}(${expression});`)
-    } else {
-      lines.push(`  return ${expression};`)
-    }
-    lines.push('}')
-    lines.push('')
-  }
-  for (const setter of declaration.setters) {
-    const setterName = `${baseName}_${setter.name}`
-    lines.push('MOONBIT_FFI_EXPORT')
-    lines.push(
-      `void ${cSymbol(binding, setterName)}(moonbit_bytes_t self, ${setter.cType} value) {`,
+  const base = valueStructBaseName(binding, declaration)
+  const fields = declaration.constructorFields
+  const nested = (field: LoweredValueStruct['accessors'][number]) =>
+    field.kind === AbiKind.ValueStruct
+  const params = fields
+    .flatMap((field) =>
+      nested(field)
+        ? [`moonbit_bytes_t arg_${field.name}`, `int32_t arg_${field.name}_offset`]
+        : [`${field.cType} arg_${field.name}`],
     )
-    lines.push(`  ((${declaration.cName} *)self)->${setter.fieldPath.join('.')} = value;`)
-    lines.push('}')
-    lines.push('')
+    .join(', ')
+  lines.push(
+    'MOONBIT_FFI_EXPORT',
+    `moonbit_bytes_t ${cSymbol(binding, `${base}_make`)}(${params || 'void'}) {`,
+  )
+  lines.push(`  ${declaration.cName} value = { 0 };`)
+  for (const field of fields) {
+    const target = `value.${field.fieldPath.join('.')}`
+    if (nested(field))
+      lines.push(
+        `  memcpy(&${target}, arg_${field.name} + arg_${field.name}_offset, sizeof(${target}));`,
+      )
+    else lines.push(`  ${target} = arg_${field.name};`)
+  }
+  lines.push(
+    `  moonbit_bytes_t bytes = moonbit_make_bytes(sizeof(${declaration.cName}), 0);`,
+    `  memcpy(bytes, &value, sizeof(${declaration.cName}));`,
+    '  return bytes;',
+    '}',
+    '',
+  )
+  const layout = [`(int32_t)sizeof(${declaration.cName})`]
+  for (const field of valueLayoutFields(declaration)) {
+    const path = field.fieldPath.join('.')
+    layout.push(`(int32_t)offsetof(${declaration.cName}, ${path})`)
+    layout.push(`(int32_t)sizeof(((${declaration.cName} *)0)->${path})`)
+    layout.push(
+      field.storageKind === 'integer'
+        ? `((${field.storageCType})-1 < (${field.storageCType})0)`
+        : '0',
+    )
+  }
+  lines.push(
+    'MOONBIT_FFI_EXPORT',
+    `int32_t *${cSymbol(binding, `${base}_layout`)}(void) {`,
+    '  static const int32_t layout[] = {',
+    ...layout.map((entry) => `    ${entry},`),
+    '  };',
+    `  int32_t *result = moonbit_make_int32_array(${layout.length}, 0);`,
+    '  memcpy(result, layout, sizeof(layout));',
+    '  return result;',
+    '}',
+    '',
+  )
+  for (const field of declaration.accessors) {
+    if (!field.nativeAccess || nested(field)) continue
+    const name = `${base}_${field.name}`
+    const path = field.fieldPath.join('.')
+    const resultType = field.kind === AbiKind.CStringReturn ? 'moonbit_bytes_t' : field.cType
+    const expression = `((${declaration.cName} *)(self + offset))->${path}`
+    const result =
+      field.kind === AbiKind.CStringReturn
+        ? `${cStringHelperSymbol(binding)}(${expression})`
+        : expression
+    lines.push(
+      'MOONBIT_FFI_EXPORT',
+      `${resultType} ${cSymbol(binding, name)}(moonbit_bytes_t self, int32_t offset) {`,
+      `  return ${result};`,
+      '}',
+      '',
+    )
+  }
+  for (const field of declaration.setters) {
+    if (!field.nativeAccess) continue
+    const name = `${base}_${field.name}`
+    const target = `((${declaration.cName} *)(self + offset))->${field.fieldPath.join('.')}`
+    const param = nested(field)
+      ? 'moonbit_bytes_t value, int32_t value_offset'
+      : `${field.cType} value`
+    lines.push(
+      'MOONBIT_FFI_EXPORT',
+      `void ${cSymbol(binding, name)}(moonbit_bytes_t self, int32_t offset, ${param}) {`,
+    )
+    if (nested(field)) lines.push(`  memmove(&${target}, value + value_offset, sizeof(${target}));`)
+    else lines.push(`  ${target} = value;`)
+    lines.push('}', '')
   }
 }
 
 function valueStructNeedsCStringHelper(declaration: LoweredValueStruct): boolean {
-  return (declaration.accessors ?? []).some((accessor) => accessor.kind === 'cstring-return')
+  return declaration.accessors.some(
+    (accessor) => accessor.nativeAccess && accessor.kind === AbiKind.CStringReturn,
+  )
 }
 
 function headerNeedsCStringHelper(header: LoweredHeader): boolean {
@@ -526,11 +542,11 @@ function usesStdint(lines: readonly string[]): boolean {
 }
 
 function usesStddef(lines: readonly string[]): boolean {
-  return lines.some((line) => /\bNULL\b/.test(line))
+  return lines.some((line) => /\b(?:NULL|offsetof)\b/.test(line))
 }
 
 function usesString(lines: readonly string[]): boolean {
-  return lines.some((line) => /\b(?:memcpy|strlen)\s*\(/.test(line))
+  return lines.some((line) => /\b(?:memcpy|memmove|strlen)\s*\(/.test(line))
 }
 
 function emitFunction(lines: string[], fn: LoweredFunction, binding: Binding): void {

@@ -10,6 +10,8 @@ import type {
   LoweredFunction,
   LoweredType,
   LoweredValueStruct,
+  LoweredField,
+  AccessorDeclaration,
   LoweringContext,
   NamedType,
   NormalizedConfig,
@@ -20,7 +22,13 @@ import type {
   TypePosition,
   ValueStructDeclaration,
 } from './c-types.ts'
-import { toCSymbolPart, toMoonBitFunctionName, toMoonBitTypeName } from './c-naming.ts'
+import {
+  escapeIdentifier,
+  toCSymbolPart,
+  toMoonBitFieldName,
+  toMoonBitFunctionName,
+  toMoonBitTypeName,
+} from './c-naming.ts'
 
 export const AbiKind: Readonly<{
   BytesParameter: 'bytes-parameter'
@@ -72,6 +80,19 @@ const builtinScalarTypes = new Map(
   }),
 )
 
+const numericValueTypes = new Set([
+  'Int',
+  'Int32',
+  'UInt',
+  'UInt32',
+  'Int64',
+  'UInt64',
+  'Byte',
+  'Bool',
+  'Float',
+  'Double',
+])
+
 function mapped<K extends AbiKindValue, const T extends object>(kind: K, fields: T) {
   return Object.freeze({ kind, ...fields })
 }
@@ -122,6 +143,24 @@ function resolveScalarType(
   })
 }
 
+function resolveValueStruct(name: string, context: LoweringContext): NamedType | undefined {
+  const seen = new Set<string>()
+  while (!seen.has(name)) {
+    seen.add(name)
+    const entry = context.config.valueStructs.get(name)
+    if (entry) return entry
+    const declaration = context.model.declarations.get(name)
+    if (
+      declaration?.kind !== 'alias' ||
+      !declaration.type ||
+      declaration.type.pointers.length !== 0
+    )
+      return undefined
+    name = declaration.type.name
+  }
+  return undefined
+}
+
 function lowerPointer(
   type: CType,
   position: TypePosition,
@@ -146,9 +185,9 @@ function lowerPointer(
     })
   }
 
-  const valueStruct = config.valueStructs.get(type.name)
+  const valueStruct = resolveValueStruct(type.name, context)
   if (pointerDepth === 1 && valueStruct) {
-    const moonbit = configuredTypeName(type.name, valueStruct, config)
+    const moonbit = configuredTypeName(valueStruct.cName, valueStruct, config)
     return mapped(AbiKind.ValueStruct, {
       cType: 'moonbit_bytes_t',
       nativeCType: renderCType(type),
@@ -313,6 +352,8 @@ function validateValueStructs(model: ApiModel, config: NormalizedConfig, errors:
 }
 
 function isConstType(type: CType, model: ApiModel, seen = new Set<string>()): boolean {
+  if (type.pointers.length > 0)
+    return type.pointers[type.pointers.length - 1]!.qualifiers.includes('const')
   if (hasCQualifier(type, 'const')) return true
   const alias = model.declarations.get(type.name)
   if (alias?.kind !== 'alias' || !alias.type || seen.has(type.name)) return false
@@ -320,65 +361,201 @@ function isConstType(type: CType, model: ApiModel, seen = new Set<string>()): bo
   return isConstType(alias.type, model, seen)
 }
 
+function containsConstFields(
+  type: CType,
+  context: LoweringContext,
+  seen = new Set<string>(),
+): boolean {
+  if (isConstType(type, context.model)) return true
+  if (type.pointers.length > 0) return false
+  const entry = resolveValueStruct(type.name, context)
+  if (!entry || seen.has(entry.cName)) return false
+  seen.add(entry.cName)
+  const declaration = context.model.declarations.get(entry.cName)
+  return (
+    declaration?.kind === 'value-struct' &&
+    declaration.fields.some((field) => containsConstFields(field.type, context, seen))
+  )
+}
+
+function lowerFieldType(type: CType, context: LoweringContext): LoweredType | undefined {
+  const entry = type.pointers.length === 0 ? resolveValueStruct(type.name, context) : undefined
+  if (entry)
+    return mapped(AbiKind.ValueStruct, {
+      cType: 'moonbit_bytes_t',
+      nativeCType: type.name,
+      moonbit: configuredTypeName(entry.cName, entry, context.config),
+      nullable: false,
+    })
+  return lowerType(type, 'return', context)
+}
+
+// Resolve typedefs without substituting the wider FFI scalar type. Enum aliases
+// without an underlying CType keep their native name for the C compiler.
+function fieldStorageType(type: CType, model: ApiModel, seen = new Set<string>()): CType {
+  // Keep portable C scalar names even when parsed system headers contain the
+  // generating host's typedef (e.g. uint32_t -> unsigned __int32 on Windows).
+  if (builtinScalarTypes.has(type.name)) return type
+  const alias = model.declarations.get(type.name)
+  if (type.pointers.length === 0 && alias?.kind === 'alias' && alias.type && !seen.has(type.name)) {
+    seen.add(type.name)
+    const target = fieldStorageType(alias.type, model, seen)
+    return { ...target, qualifiers: [...type.qualifiers, ...target.qualifiers] }
+  }
+  return type
+}
+
+function fieldNeedsNativeAccess(
+  declaration: ValueStructDeclaration,
+  field: AccessorDeclaration,
+  model: ApiModel,
+): boolean {
+  let current = declaration
+  for (const segment of field.fieldPath) {
+    const member = current.fields.find((entry) => entry.name === segment)
+    if (!member) break
+    const storage = fieldStorageType(member.type, model)
+    const qualifiers = storage.pointers.at(-1)?.qualifiers ?? storage.qualifiers
+    if (qualifiers.includes('volatile')) return true
+    const next = model.declarations.get(storage.name)
+    if (next?.kind === 'value-struct') current = next
+  }
+  return false
+}
+
 function lowerValueStruct(
   declaration: ValueStructDeclaration,
   context: LoweringContext,
   errors: string[],
 ): LoweredValueStruct {
-  const accessors: LoweredValueStruct['accessors'][number][] = []
-  for (const accessor of declaration.accessors ?? []) {
-    const lowered = lowerType(accessor.type, 'return', context)
-    if (!lowered || lowered.moonbit === undefined) {
-      errors.push(
-        `${declaration.cName}.${accessor.fieldPath.join('.')}: unsupported accessor type ${renderCType(accessor.type)}`,
-      )
-      continue
-    }
-    accessors.push(
-      Object.freeze({
-        ...accessor,
-        cType: lowered.cType,
-        moonbit: lowered.moonbit,
-        kind: lowered.kind,
-      }),
+  const settings = context.config.valueStructs.get(declaration.cName)
+  const union = declaration.aggregateKind === 'union'
+  const lower = (field: AccessorDeclaration): LoweredField | undefined => {
+    const type = lowerFieldType(field.type, context)
+    if (!type || !type.moonbit) return undefined
+    if (
+      type.kind !== AbiKind.Direct &&
+      type.kind !== AbiKind.OpaquePointer &&
+      type.kind !== AbiKind.CStringReturn &&
+      type.kind !== AbiKind.ValueStruct
     )
+      return undefined
+    const storage = fieldStorageType(field.type, context.model)
+    // Top-level qualifiers do not belong on the local scalar used by memcpy.
+    // Preserve pointee qualifiers (e.g. const char *).
+    const storageCType = renderCType({
+      ...storage,
+      qualifiers: storage.pointers.length === 0 ? [] : storage.qualifiers,
+      pointers: storage.pointers.map((pointer, index) =>
+        index === storage.pointers.length - 1 ? { qualifiers: [] } : pointer,
+      ),
+    })
+    const alias = context.model.declarations.get(storage.name)
+    const storageKind =
+      type.kind !== AbiKind.Direct
+        ? undefined
+        : storage.name === 'float' || storage.name === 'double' || storage.name === 'bool'
+          ? storage.name
+          : builtinScalarTypes.has(storage.name) || (alias?.kind === 'alias' && !alias.type)
+            ? 'integer'
+            : undefined
+    return {
+      ...field,
+      cType: type.cType,
+      moonbit: type.moonbit,
+      kind: type.kind,
+      nativeCType: type.nativeCType,
+      storageCType,
+      storageKind,
+      nativeAccess:
+        fieldNeedsNativeAccess(declaration, field, context.model) ||
+        (type.kind === AbiKind.Direct && (!storageKind || !numericValueTypes.has(type.moonbit))),
+    }
   }
-  const setters: LoweredValueStruct['setters'][number][] = []
-  const methodNames = new Set([
-    ...declaration.fields.map((field) => field.name),
-    ...accessors.map((accessor) => accessor.name),
-    'to_bytes',
-    'make',
-  ])
-  for (const setter of declaration.setters ?? []) {
-    const lowered = lowerType(setter.type, 'param', context)
+  const overrides = new Map(
+    (declaration.accessors ?? []).map((field) => [field.fieldPath.join('.'), field]),
+  )
+  const accessors: LoweredField[] = []
+  const constructorFields: LoweredField[] = []
+  const methodNames = new Set(['as_bytes', 'copy', 'make'])
+  const addAccessor = (field: AccessorDeclaration, explicit: boolean) => {
+    field = { ...field, name: escapeIdentifier(field.name) }
+    const lowered = lower(field)
+    if (!lowered) {
+      if (explicit || !union)
+        errors.push(
+          `${declaration.cName}.${field.fieldPath.join('.')}: unsupported accessor type ${renderCType(field.type)}`,
+        )
+      return
+    }
+    if (lowered.kind === AbiKind.ValueStruct && isConstType(field.type, context.model)) {
+      errors.push(
+        `${declaration.cName}.${field.fieldPath.join('.')}: const aggregate views are unsupported`,
+      )
+      return
+    }
+    if (methodNames.has(field.name))
+      errors.push(`${declaration.cName}: duplicate value struct method ${field.name}`)
+    methodNames.add(field.name)
+    accessors.push(lowered)
+  }
+  for (const field of declaration.fields) {
+    const accessor = {
+      fieldPath: [field.name],
+      name: toMoonBitFieldName(field.name),
+      type: field.type,
+    }
+    if (!union && settings?.init !== 'zero') {
+      const lowered =
+        field.array || containsConstFields(field.type, context) ? undefined : lower(accessor)
+      if (!lowered || lowered.kind === AbiKind.CStringReturn)
+        errors.push(
+          `${declaration.cName}.${field.name}: unsupported constructor field; use init: "zero" for output structs`,
+        )
+      else constructorFields.push(lowered)
+    }
+    const override = overrides.get(field.name)
+    if (override) {
+      addAccessor(override, true)
+      overrides.delete(field.name)
+    } else if (!field.array) addAccessor(accessor, false)
+  }
+  for (const field of overrides.values()) addAccessor(field, true)
+  const setters: LoweredField[] = []
+  const declarations: AccessorDeclaration[] = [...(declaration.setters ?? [])]
+  if (settings?.setters === true) {
+    for (const field of declaration.fields) {
+      if (field.array || containsConstFields(field.type, context)) continue
+      const lowered = lower({
+        fieldPath: [field.name],
+        name: toMoonBitFieldName(`set_${field.name}`),
+        type: field.type,
+      })
+      if (lowered && (lowered.kind === AbiKind.Direct || lowered.kind === AbiKind.ValueStruct))
+        declarations.push(lowered)
+    }
+  }
+  for (const field of declarations) {
+    const lowered = lower({ ...field, name: escapeIdentifier(field.name) })
     if (
       !lowered ||
-      lowered.kind !== AbiKind.Direct ||
+      (lowered.kind !== AbiKind.Direct && lowered.kind !== AbiKind.ValueStruct) ||
       lowered.moonbit === 'Unit' ||
-      isConstType(setter.type, context.model)
+      containsConstFields(field.type, context)
     ) {
       errors.push(
-        `${declaration.cName}.${setter.fieldPath.join('.')}: setters require writable scalar fields (${renderCType(setter.type)})`,
+        `${declaration.cName}.${field.fieldPath.join('.')}: setters require writable scalar fields or configured value structs (${renderCType(field.type)})`,
       )
       continue
     }
-    if (methodNames.has(setter.name)) {
-      errors.push(`${declaration.cName}: duplicate value struct method ${setter.name}`)
-      continue
-    }
-    methodNames.add(setter.name)
-    setters.push(
-      Object.freeze({
-        ...setter,
-        cType: lowered.cType,
-        moonbit: lowered.moonbit,
-        kind: lowered.kind,
-      }),
-    )
+    if (methodNames.has(lowered.name))
+      errors.push(`${declaration.cName}: duplicate value struct method ${lowered.name}`)
+    methodNames.add(lowered.name)
+    setters.push(lowered)
   }
   return Object.freeze({
     ...declaration,
+    constructorFields: Object.freeze(constructorFields),
     accessors: Object.freeze(accessors),
     setters: Object.freeze(setters),
   })
@@ -503,11 +680,17 @@ export function lowerBindings(model: ApiModel, config: NormalizedConfig): Bindin
         unsupportedReason ??= `parameter ${param.name} has unsupported type ${renderCType(param.type)}`
         continue
       }
-      params.push(Object.freeze({ ...param, lowered }))
+      params.push(Object.freeze({ ...param, name: escapeIdentifier(param.name), lowered }))
     }
     if (unsupportedReason) {
       unsupported(declaration, unsupportedReason)
       continue
+    }
+    const generatedNames = new Set<string>()
+    for (const param of params) {
+      if (generatedNames.has(param.name))
+        errors.push(`${declaration.cName}: duplicate MoonBit parameter ${param.name}`)
+      generatedNames.add(param.name)
     }
 
     if (returnType.kind === AbiKind.Resource) {
@@ -522,7 +705,9 @@ export function lowerBindings(model: ApiModel, config: NormalizedConfig): Bindin
     }
 
     const moonbit =
-      functionConfig.rename ?? toMoonBitFunctionName(declaration.cName, config.functionNamePrefixes)
+      functionConfig.rename === undefined
+        ? toMoonBitFunctionName(declaration.cName, config.functionNamePrefixes)
+        : escapeIdentifier(functionConfig.rename)
     functions.push(
       Object.freeze({
         cName: declaration.cName,
@@ -549,7 +734,10 @@ export function lowerBindings(model: ApiModel, config: NormalizedConfig): Bindin
 
   const valueStructs = new Map<string, LoweredValueStruct>(
     [...model.declarations.values()]
-      .filter((entry) => entry.kind === 'value-struct')
+      .filter(
+        (entry): entry is ValueStructDeclaration =>
+          entry.kind === 'value-struct' && config.valueStructs.has(entry.cName),
+      )
       .map((entry) => [entry.cName, lowerValueStruct(entry, context, errors)]),
   )
 

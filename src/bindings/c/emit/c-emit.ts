@@ -3,6 +3,7 @@ import { createMoonBitEmitter } from './c-moonbit.ts'
 import { createPointerHelperEmitter } from './c-pointer.ts'
 import { createCStringHelperEmitter } from './c-string.ts'
 import { createCStubEmitter } from './c-stub.ts'
+import { createValueHelperEmitter } from './c-value.ts'
 
 export function createBindingEmitters(
   options: Readonly<{ moonbit?: EmitterOptions; cStub?: EmitterOptions }> = {},
@@ -12,5 +13,6 @@ export function createBindingEmitters(
     createCStubEmitter(options.cStub),
     createCStringHelperEmitter(),
     createPointerHelperEmitter(),
+    createValueHelperEmitter(),
   ]
 }

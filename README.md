@@ -78,7 +78,71 @@ Fundamental C scalar types are handled by the C lowering implementation. A
 declaration source should emit aliases for typedefs; aliases are resolved
 recursively before `typeOverrides` is considered.
 
-Value-struct setters are opt-in and work with nested struct or union members:
+Selected value structs expose their fields with snake_case getters. Registered
+struct/union fields return views into the same backing buffer:
+
+```ts
+valueStructs: {
+  example_event_t: {
+    accessors: { type: 'event_type' },
+    setters: { type: 'set_event_type' },
+  },
+  example_payload_t: { setters: true },
+}
+```
+
+This supports `event.payload().code()` and
+`event.payload().set_code(42)`. A view retains its backing bytes and carries its
+native offset; offsets and sizes come from the C compiler. Native functions
+receive the viewed address, including when they write to it. Reusing the backing
+buffer changes existing views. `copy()` makes an independent copy of the struct
+bytes; native pointers in those bytes are still shallow copies. `as_bytes()`
+returns a `BytesView` of exactly the structure's bytes without copying, including
+for nested views. The byte view retains the backing buffer and reflects subsequent
+writes. Use `copy().as_bytes()` when an independent snapshot is needed.
+
+Each struct emits a constructor and one layout function. The layout contains the
+native size and each selected field's offset, size and integer signedness.
+MoonBit loads it once at package initialization, along with the native byte order.
+Numeric getters read the buffer in MoonBit using bitstring patterns, without a C
+call or an intermediate byte copy. One generic `read_integer[T]` handles all
+integer widths and byte orders. Its private `NativeWord` trait has two
+constructors, from `Int32` and `UInt32`; implementations are emitted only for
+integer result types used by the package. The getter's return type determines
+`T`, without an intermediate `UInt64`. Signed patterns handle sign extension;
+unsigned patterns handle zero extension. 64-bit fields combine two 32-bit words.
+Small adapters handle `Byte`, `Bool`, `Float` and `Double`; floating-point readers
+reinterpret the corresponding 32/64 bits. The C compiler determines enum widths
+and signedness. Numeric conversions remain for explicit `typeOverrides` whose
+API type differs from native storage.
+
+Numeric setters encode the value in MoonBit and use one shared C bit writer.
+Its `UInt64` parameter is a bit container at the FFI boundary; the writer copies
+only the native field width. Pointer and C-string reads, explicit
+`copy()` and aggregate assignment also use a fixed set of shared helpers in
+`value_gen.mbt` / `value_stub_gen.c`. Adding a typedef or enum does not create a
+new C helper. C-string getters copy the string into owned MoonBit bytes while
+retaining the source buffer for the entire call. Scalar `volatile` fields and
+custom scalar mappings outside the supported numeric types retain native field
+accessors. Aggregate assignment uses `memmove` to support overlapping views.
+Bit-fields remain unsupported.
+
+Add `value_stub_gen.c` to the package's `native-stub` list. Custom emitter
+configurations should include `createValueHelperEmitter()`;
+`createBindingEmitters()` already includes it.
+
+Ordinary struct constructors accept fields and copy nested structs into their
+own buffer. Unions have zero-initializing constructors; only their scalar and
+registered aggregate members get automatic getters. Arrays are not exposed.
+Use `init: "zero"` for output structs that should be initialized by native code,
+including structs containing borrowed strings. Const aggregate views are
+currently rejected; scalar const fields remain readable.
+
+Setters remain opt-in: `setters: true` emits setters for writable scalar and
+registered aggregate fields. Aggregate assignment copies the bytes, including
+overlapping views. Pointer setters require a separate ownership policy and are
+not generated. Getter renames and explicit field-path accessors/setters are also
+supported:
 
 ```ts
 valueStructs: {
@@ -89,10 +153,10 @@ valueStructs: {
 }
 ```
 
-This emits a `set_user_code(value)` method and a borrowed C stub that assigns the
-native field. Field types come from the headers; sizes and offsets remain the
-C compiler's responsibility. Setters support writable scalar fields only;
-pointers, arrays, aggregate fields, and `const` fields are rejected. Callers must
+This emits a `set_user_code(value)` method that calls a borrowed shared C helper.
+Field types come from the headers; sizes and offsets remain the
+C compiler's responsibility. Setters support writable scalar fields and registered
+value structs; pointers, arrays, and `const` fields are rejected. Callers must
 select the appropriate union case before assigning its payload.
 
 ### JSON configuration

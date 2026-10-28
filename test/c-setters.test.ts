@@ -51,23 +51,18 @@ test('scalar union setters resolve typedefs and nested fields in both emitters',
   })
   const mbt = files.get('events_gen.mbt')!
   const stub = files.get('events_stub_gen.c')!
-  assert.match(
-    mbt,
-    /#borrow\(bytes\)\nextern "c" fn event_set_user_code\(bytes : Bytes, value : Int32\) -> Unit/,
-  )
+  const helpers = files.get('value_stub_gen.c')!
   assert.match(mbt, /pub fn Event::set_user_code\(self : Self, value : Int32\) -> Unit/)
   assert.match(mbt, /pub fn Event::set_event_type\(self : Self, value : UInt32\)/)
   assert.match(mbt, /pub fn Event::set_user_enabled\(self : Self, value : Bool\)/)
   assert.match(
-    stub,
-    /void moonbit_app_event_set_event_type\(moonbit_bytes_t self, uint32_t value\)/,
+    helpers,
+    /void moonbit_app_value_write_bits\(moonbit_bytes_t bytes, int32_t offset, int32_t size, uint64_t bits\)/,
   )
-  assert.match(stub, /\(\(app_event_t \*\)self\)->user\.window_id = value;/)
-  assert.match(stub, /\(\(app_event_t \*\)self\)->user\.code = value;/)
-  assert.match(
-    stub,
-    /void moonbit_app_event_set_user_enabled\(moonbit_bytes_t self, int32_t value\)/,
-  )
+  assert.match(stub, /offsetof\(app_event_t, user.window_id\)/)
+  assert.match(stub, /offsetof\(app_event_t, user.code\)/)
+  assert.match(mbt, /if value \{ 1UL \} else \{ 0UL \}/)
+  assert.doesNotMatch(stub, /moonbit_app_event_set_/)
   assert.match(stub, /app_event_t value = \{ 0 \};/)
 })
 

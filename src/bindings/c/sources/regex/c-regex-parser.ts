@@ -239,7 +239,9 @@ function buildSetters(
   const result = new Map<string, readonly AccessorDeclaration[]>()
   for (const [cName, config] of Object.entries(valueStructs)) {
     const setters: AccessorDeclaration[] = []
-    for (const [field, name] of Object.entries(config.setters ?? {})) {
+    for (const [field, name] of Object.entries(
+      config.setters === true ? {} : (config.setters ?? {}),
+    )) {
       const fieldPath = field.split('.')
       if (fieldPath.some((segment) => !/^[A-Za-z_]\w*$/.test(segment))) {
         throw new Error(`${cName}.${field}: invalid setter field path`)
@@ -403,7 +405,8 @@ export function parseCHeadersWithRegex(input: RegexParserInput): ApiModel {
           .map((declaration) => ({
             kind: 'value-struct' as const,
             cName: declaration.cName,
-            fields: declaration.kind === 'struct' ? declaration.fields : [],
+            aggregateKind: declaration.kind as 'struct' | 'union',
+            fields: declaration.fields,
             accessors: accessors.get(declaration.cName) ?? [],
             setters: setters.get(declaration.cName) ?? [],
           })),
