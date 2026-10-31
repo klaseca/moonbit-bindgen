@@ -74,6 +74,10 @@ written as `{ "kind": "dependent", "ownerArg": 0 }`, where `ownerArg` is the
 zero-based C parameter index. The generated wrapper keeps that owner alive.
 `return.ownership` is separate and applies to copied C strings.
 
+For a `const char *` parameter, `params: { name: { nullable: true } }` emits
+`name : Bytes?`. MoonBit's native ABI passes `None` as `NULL` and `Some(bytes)`
+as the borrowed byte buffer. An empty buffer remains a non-null empty C string.
+
 Fundamental C scalar types are handled by the C lowering implementation. A
 declaration source should emit aliases for typedefs; aliases are resolved
 recursively before `typeOverrides` is considered.

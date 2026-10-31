@@ -81,6 +81,7 @@ static void bump_child(child_t *child) { child->windowID += 1; }
 static void bump_alias(child_alias_t *child) { child->windowID += 1; }
 static bool optional_child(const child_t *child) { return child == 0; }
 static void fill_output(output_t *output) { output->text = "native output"; }
+static int nullable_name(const char *name) { return name == 0 ? -1 : name[0]; }
 `
 function binding() {
   const valueStructs = {
@@ -130,6 +131,7 @@ function binding() {
       'large_as_float',
       'large_as_double',
       { name: 'optional_child', params: { child: { nullable: true } } },
+      { name: 'nullable_name', params: { name: { nullable: true } } },
     ],
   })
   return generateFiles(lowerBindings(model, config), createBindingEmitters())
@@ -143,6 +145,8 @@ test('nested value fields lower once and emit buffer views with native offsets',
   assert.match(mbt, /offset: self.offset \+ parent_layout\[4\]/)
   assert.match(mbt, /fn Child::window_id\(self : Self\) -> Int32/)
   assert.match(mbt, /bump_child_ffi\(child.bytes, child.offset\)/)
+  assert.match(mbt, /pub extern "c" fn nullable_name\(name : Bytes\?\) -> Int32/)
+  assert.match(c, /nullable_name\(\(const char \*\)name\)/)
   assert.match(c, /offsetof\(middle_t, child\)/)
   assert.match(
     files.get('value_stub_gen.c')!,
@@ -468,6 +472,13 @@ test "views preserve offsets and ownership, constructors and copy isolate bytes"
   let signedness = Signedness(-1, 0xffffffffU)
   assert_eq(signedness.signed_value(), -1)
   assert_eq(signedness.unsigned_value(), 0xffffffffU)
+}
+
+///|
+test "nullable strings distinguish null from empty data" {
+  assert_eq(nullable_name(None), -1)
+  assert_eq(nullable_name(Some(b"")), 0)
+  assert_eq(nullable_name(Some(b"software")), 115)
 }
 
 ///|

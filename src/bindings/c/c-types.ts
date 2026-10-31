@@ -149,7 +149,6 @@ export type ResourceInput = Readonly<{
 export type Resource = ResourceInput & Readonly<{ cName: string }>
 
 export type ParamPolicy = Readonly<{
-  emptyAsNull?: boolean
   nullable?: boolean
   passing?: 'null'
 }>
@@ -258,9 +257,8 @@ export type BytesParameterType = LoweredBase &
 export type CStringParameterType = LoweredBase &
   Readonly<{
     kind: 'cstring-parameter'
-    moonbit: 'Bytes'
+    moonbit: 'Bytes' | 'Bytes?'
     ownership: 'borrowed'
-    emptyAsNull: boolean
   }>
 
 export type CStringReturnType = LoweredBase &

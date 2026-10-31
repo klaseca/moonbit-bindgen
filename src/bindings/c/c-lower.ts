@@ -208,9 +208,8 @@ function lowerPointer(
     return mapped(AbiKind.CStringParameter, {
       cType: 'moonbit_bytes_t',
       nativeCType: 'const char *',
-      moonbit: 'Bytes',
+      moonbit: override.nullable === true ? 'Bytes?' : 'Bytes',
       ownership: 'borrowed',
-      emptyAsNull: override.emptyAsNull === true,
     })
   }
 

@@ -56,9 +56,7 @@ function callArgument(param: LoweredParam): string {
     case AbiKind.ImplicitNull:
       return 'NULL'
     case AbiKind.CStringParameter:
-      return param.lowered.emptyAsNull
-        ? `(Moonbit_array_length(${param.name}) == 0 ? NULL : (const char *)${param.name})`
-        : `(const char *)${param.name}`
+      return `(const char *)${param.name}`
     case AbiKind.BytesParameter:
       return `((${param.lowered.nativeCType})${param.name})`
     case AbiKind.ValueStruct:
@@ -523,8 +521,6 @@ function functionUsesNull(fn: LoweredFunction): boolean {
       case AbiKind.ImplicitNull:
       case AbiKind.OutParameter:
         return true
-      case AbiKind.CStringParameter:
-        return param.lowered.emptyAsNull === true
       case AbiKind.ValueStruct:
         return param.lowered.nullable === true
       default:

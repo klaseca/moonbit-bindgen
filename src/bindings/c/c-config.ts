@@ -177,7 +177,7 @@ function normalizeFunction(entry: FunctionConfigInput): FunctionConfig {
       throw new Error(`functions.${entry.name}.params.${name} must be an object`)
     }
     for (const option of Object.keys(policy)) {
-      if (!new Set(['emptyAsNull', 'nullable', 'passing']).has(option)) {
+      if (!new Set(['nullable', 'passing']).has(option)) {
         throw new Error(`functions.${entry.name}.params.${name} uses unknown option ${option}`)
       }
     }
