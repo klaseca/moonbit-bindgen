@@ -39,8 +39,8 @@ export function readerUsesEndianness(reader: NumericReader): boolean {
 const wordConversions = new Map<string, readonly [string, string]>([
   ['Int32', ['value', 'value.reinterpret_as_int()']],
   ['UInt32', ['value.reinterpret_as_uint()', 'value']],
-  ['Int64', ['Int64::from_int(value)', 'value.to_int64()']],
-  ['UInt64', ['Int64::from_int(value).reinterpret_as_uint64()', 'value.to_uint64()']],
+  ['Int64', ['value.to_int64()', 'value.to_int64()']],
+  ['UInt64', ['value.to_int64().reinterpret_as_uint64()', 'value.to_uint64()']],
 ])
 
 function emitIntegerReader(lines: string[], types: ReadonlySet<string>): void {

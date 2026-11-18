@@ -110,7 +110,7 @@ export function valueNumericWrite(field: LoweredField, value: string, signed: st
   }
   switch (api) {
     case 'Int32':
-      return `Int64::from_int(${value}).reinterpret_as_uint64()`
+      return `${value}.to_int64().reinterpret_as_uint64()`
     case 'UInt32':
       return `${value}.to_uint64()`
     case 'Int64':
