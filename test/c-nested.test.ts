@@ -76,6 +76,9 @@ static void fill_pointers(pointers_t *output) {
   output->text = "shared pointer reader";
 }
 static int token_number(token_t *token) { return token->number; }
+static int token_with_offset(const void *token, const void *offset) {
+  return token == 0 ? -1 : ((const token_t *)token)->number + *(const uint8_t *)offset;
+}
 static int reserved_argument(int async) { return async; }
 static void bump_child(child_t *child) { child->windowID += 1; }
 static void bump_alias(child_alias_t *child) { child->windowID += 1; }
@@ -127,6 +130,7 @@ function binding() {
       'reserved_argument',
       'fill_pointers',
       'token_number',
+      { name: 'token_with_offset', params: { token: { passing: 'pointer' } } },
       'fill_conversions',
       'large_as_float',
       'large_as_double',
@@ -437,6 +441,8 @@ test "views preserve offsets and ownership, constructors and copy isolate bytes"
   fill_pointers(pointers)
   assert_false(pointers.token().is_null())
   assert_eq(token_number(pointers.token()), 31)
+  assert_eq(token_with_offset(pointers.token().to_pointer(), b"A"), 96)
+  assert_eq(token_with_offset(Pointer::null(), b"A"), -1)
   assert_eq(pointers.text(), b"shared pointer reader")
   let special = Special(5)
   special.set_status(6)

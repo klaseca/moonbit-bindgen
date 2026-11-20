@@ -152,7 +152,7 @@ export type Resource = ResourceInput & Readonly<{ cName: string }>
 
 export type ParamPolicy = Readonly<{
   nullable?: boolean
-  passing?: 'null'
+  passing?: 'null' | 'pointer'
 }>
 
 export type ReturnPolicy = Readonly<{

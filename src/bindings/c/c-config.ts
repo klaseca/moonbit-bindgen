@@ -173,13 +173,20 @@ function normalizeFunction(entry: FunctionConfigInput): FunctionConfig {
     objectEntries(entry.params, `functions.${entry.name}.params`),
   )
   for (const [name, policy] of params) {
+    const path = `functions.${entry.name}.params.${name}`
     if (policy === null || typeof policy !== 'object' || Array.isArray(policy)) {
-      throw new Error(`functions.${entry.name}.params.${name} must be an object`)
+      throw new Error(`${path} must be an object`)
     }
     for (const option of Object.keys(policy)) {
       if (!new Set(['nullable', 'passing']).has(option)) {
-        throw new Error(`functions.${entry.name}.params.${name} uses unknown option ${option}`)
+        throw new Error(`${path} uses unknown option ${option}`)
       }
+    }
+    if (policy.passing !== undefined && policy.passing !== 'null' && policy.passing !== 'pointer') {
+      throw new Error(`${path}.passing must be "null" or "pointer"`)
+    }
+    if (policy.passing === 'pointer' && policy.nullable === true) {
+      throw new Error(`${path}: use Pointer::null() for a null native pointer`)
     }
   }
   const returnPolicy = entry.return ?? {}

@@ -78,6 +78,10 @@ For a `const char *` parameter, `params: { name: { nullable: true } }` emits
 `name : Bytes?`. MoonBit's native ABI passes `None` as `NULL` and `Some(bytes)`
 as the borrowed byte buffer. An empty buffer remains a non-null empty C string.
 
+For a `void *` or `const void *` parameter that carries a native object address,
+`params: { device: { passing: 'pointer' } }` emits `device : Pointer`. Use
+`Pointer::null()` to pass a null address. The default mapping is `Bytes` for buffers.
+
 Fundamental C scalar types are handled by the C lowering implementation. A
 declaration source should emit aliases for typedefs; aliases are resolved
 recursively before `typeOverrides` is considered.

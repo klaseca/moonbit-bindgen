@@ -295,6 +295,12 @@ export function lowerType(
     })
   }
 
+  if (override.passing === 'pointer') {
+    if (position !== 'param' || type.name !== 'void' || type.pointers.length !== 1) return undefined
+    const cType = renderCType(type)
+    return mapped(AbiKind.OpaquePointer, { cType, nativeCType: cType, moonbit: 'Pointer' })
+  }
+
   if (type.pointers.length > 0) {
     return lowerPointer(type, position, context, override)
   }
@@ -679,14 +685,16 @@ export function lowerBindings(model: ApiModel, config: NormalizedConfig): Bindin
     const params: LoweredFunction['params'][number][] = []
     let unsupportedReason: string | undefined
     for (const param of declaration.params) {
-      const lowered = lowerType(
-        param.type,
-        'param',
-        context,
-        functionConfig.params.get(param.name) ?? {},
-      )
+      const policy = functionConfig.params.get(param.name) ?? {}
+      const lowered = lowerType(param.type, 'param', context, policy)
       if (!lowered) {
-        unsupportedReason ??= `parameter ${param.name} has unsupported type ${renderCType(param.type)}`
+        if (policy.passing === 'pointer') {
+          errors.push(
+            `${declaration.cName}: parameter ${param.name} must be void * for passing: "pointer"`,
+          )
+        } else {
+          unsupportedReason ??= `parameter ${param.name} has unsupported type ${renderCType(param.type)}`
+        }
         continue
       }
       params.push(Object.freeze({ ...param, name: escapeIdentifier(param.name), lowered }))
