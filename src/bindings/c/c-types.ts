@@ -49,6 +49,8 @@ export type OpaqueTypeDeclaration = DeclarationBase &
   Readonly<{
     kind: 'opaque-type'
     moonbit?: string
+    /** The typedef already names a pointer, as in `typedef struct State *Handle`. */
+    pointerTypedef?: true
   }>
 
 export type ValueStructDeclaration = DeclarationBase &

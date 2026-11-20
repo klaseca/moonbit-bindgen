@@ -168,6 +168,15 @@ function parseAliases(source: string, options: ParserOptions): ApiDeclarationInp
   return aliases
 }
 
+function parseOpaqueTypes(source: string): ApiDeclarationInput[] {
+  const pattern = /typedef\s+struct\s+[A-Za-z_]\w*(\s*\*\s*|\s+)([A-Za-z_]\w*)\s*;/g
+  return [...source.matchAll(pattern)].map((match) => ({
+    kind: 'opaque-type',
+    cName: capture(match, 2),
+    ...(capture(match, 1).includes('*') ? { pointerTypedef: true } : {}),
+  }))
+}
+
 function resolveFieldPathType(
   structs: Map<string, StructInfo>,
   cName: string,
@@ -397,9 +406,7 @@ export function parseCHeadersWithRegex(input: RegexParserInput): ApiModel {
       emit: header.emit,
       declarations: [
         ...parseAliases(header.stripped, options),
-        ...[
-          ...header.stripped.matchAll(/typedef\s+struct\s+[A-Za-z_]\w*\s+([A-Za-z_]\w*)\s*;/g),
-        ].map((match) => ({ kind: 'opaque-type' as const, cName: capture(match, 1) })),
+        ...parseOpaqueTypes(header.stripped),
         ...[...parseStructs(header.stripped, options.normalizeType).values()]
           .filter((declaration) => selectedStructs.has(declaration.cName))
           .map((declaration) => ({

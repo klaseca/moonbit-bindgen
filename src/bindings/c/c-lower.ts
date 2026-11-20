@@ -161,13 +161,29 @@ function resolveValueStruct(name: string, context: LoweringContext): NamedType |
   return undefined
 }
 
+function lowerOpaquePointer(type: CType, context: LoweringContext): LoweredType | undefined {
+  const declaration = context.model.declarations.get(type.name)
+  if (
+    declaration?.kind !== 'opaque-type' ||
+    type.pointers.length !== (declaration.pointerTypedef ? 0 : 1)
+  ) {
+    return undefined
+  }
+  const cType = renderCType(type)
+  return mapped(AbiKind.OpaquePointer, {
+    cType,
+    nativeCType: cType,
+    moonbit: configuredTypeName(type.name, declaration, context.config),
+  })
+}
+
 function lowerPointer(
   type: CType,
   position: TypePosition,
   context: LoweringContext,
   override: ParamPolicy & FunctionConfig['return'],
 ): LoweredType | undefined {
-  const { config, model } = context
+  const { config } = context
   const pointerDepth = type.pointers.length
   const isConst = hasCQualifier(type, 'const')
   const resource = config.resources.get(type.name)
@@ -246,19 +262,8 @@ function lowerPointer(
     })
   }
 
-  if (pointerDepth === 1) {
-    const declaration = model.declarations.get(type.name)
-    if (declaration?.kind === 'opaque-type') {
-      return mapped(AbiKind.OpaquePointer, {
-        cType: renderCType(type),
-        nativeCType: renderCType(type),
-        moonbit:
-          declaration.moonbit ??
-          config.typeRenames.get(type.name) ??
-          toMoonBitTypeName(type.name, config.typeNamePrefixes),
-      })
-    }
-  }
+  const opaque = lowerOpaquePointer(type, context)
+  if (opaque) return opaque
 
   if (position === 'param' && pointerDepth === 1) {
     const scalar = resolveScalarType(type.name, context)
@@ -303,7 +308,7 @@ export function lowerType(
     })
   }
 
-  return undefined
+  return lowerOpaquePointer(type, context)
 }
 
 function validateResources(model: ApiModel, config: NormalizedConfig, errors: string[]) {
@@ -311,6 +316,11 @@ function validateResources(model: ApiModel, config: NormalizedConfig, errors: st
     const declaration = model.declarations.get(cName)
     if (declaration?.kind !== 'opaque-type') {
       errors.push(`resources.${cName} does not reference an opaque type`)
+    } else if (declaration.pointerTypedef) {
+      errors.push(
+        `resources.${cName}: pointer typedef handles require explicit lifetime management`,
+      )
+      continue
     }
     for (const [operation, functionName] of [
       ['release', resource.release],

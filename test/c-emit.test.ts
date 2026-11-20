@@ -9,6 +9,45 @@ import { parseCType } from '../src/bindings/c/sources/regex/c-regex-type.ts'
 
 const c = parseCType
 
+test('typedefs that name a struct pointer generate unmanaged handles', () => {
+  const model = parseCHeadersWithRegex({
+    headers: [
+      {
+        path: 'display.h',
+        outputBase: 'display',
+        source: `
+        typedef struct DisplayState *DisplayContext;
+        extern DisplayContext display_open(void);
+        extern bool display_close(DisplayContext context);
+        extern bool display_find(DisplayContext *context);
+      `,
+      },
+    ],
+  })
+  const binding = lowerBindings(
+    model,
+    normalizeConfig({
+      namespace: 'fixture',
+      typeRenames: { DisplayContext: 'Context' },
+    }),
+  )
+  const files = generateFiles(binding, createBindingEmitters())
+  const mbt = files.get('display_gen.mbt')!
+  const stub = files.get('display_stub_gen.c')!
+
+  assert.match(mbt, /#external\npub type Context/)
+  assert.match(mbt, /pub fn Context::to_pointer\(self : Self\) -> Pointer/)
+  assert.match(mbt, /pub fn Context::is_null\(self : Self\) -> Bool/)
+  assert.match(mbt, /pub extern "c" fn display_open\(\) -> Context/)
+  assert.match(mbt, /pub extern "c" fn display_close\(context : Context\) -> Bool/)
+  assert.match(stub, /DisplayContext moonbit_fixture_display_open\(void\)/)
+  assert.match(stub, /int32_t moonbit_fixture_display_close\(DisplayContext context\)/)
+  assert.deepEqual(
+    binding.diagnostics.skipped.map(({ name }) => name),
+    ['display_find'],
+  )
+})
+
 test('immutable owned handles explicitly erase constness at the ownership box', () => {
   const model = parseCHeadersWithRegex({
     headers: [
