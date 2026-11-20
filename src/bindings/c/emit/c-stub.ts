@@ -82,6 +82,12 @@ function resourceFactoryCall(
   expression: string,
 ): string {
   const prefix = resourcePrefix(binding, type.resource)
+  // The ownership box stores an opaque handle, never dereferencing it. Erase
+  // pointee constness only at this boundary, rather than relying on C's implicit
+  // qualifier discard (for example, Skia's immutable GrGLInterface handles).
+  if (type.nativeCType.startsWith('const ')) {
+    expression = `(${type.resource} *)${expression}`
+  }
   switch (type.lifetime.kind) {
     case 'owned':
       return `${prefix}_make_owned(${expression})`

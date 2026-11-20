@@ -305,10 +305,10 @@ function parseEnumConstants(source: string, options: ParserOptions): ApiDeclarat
       const match = rawEntry.trim().match(/^([A-Z_][A-Z0-9_]*)(?:\s*=\s*([^,]+))?$/)
       if (!match) continue
       const cName = capture(match, 1)
-      if (!selectedConstant(cName, options.constantPrefixes)) continue
       const literal = match[2] ? parseNumericLiteral(match[2]) : String(nextValue)
       if (literal === undefined) continue
       nextValue = Number.parseInt(literal) + 1
+      if (!selectedConstant(cName, options.constantPrefixes)) continue
       constants.push({
         kind: 'constant',
         cName,

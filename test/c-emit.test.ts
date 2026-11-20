@@ -9,6 +9,37 @@ import { parseCType } from '../src/bindings/c/sources/regex/c-regex-type.ts'
 
 const c = parseCType
 
+test('immutable owned handles explicitly erase constness at the ownership box', () => {
+  const model = parseCHeadersWithRegex({
+    headers: [
+      {
+        path: 'interface.h',
+        outputBase: 'interface',
+        source: `
+        typedef struct interface_t interface_t;
+        extern const interface_t * interface_create(void);
+        extern void interface_unref(const interface_t *value);
+        extern bool interface_validate(const interface_t *value);
+      `,
+      },
+    ],
+  })
+  const files = generateFiles(
+    lowerBindings(
+      model,
+      normalizeConfig({
+        namespace: 'fixture',
+        resources: { interface_t: { release: 'interface_unref', defaultLifetime: 'owned' } },
+      }),
+    ),
+    createBindingEmitters(),
+  )
+  const stub = files.get('interface_stub_gen.c')!
+  assert.match(stub, /_make_owned\(\(interface_t \*\)interface_create\(\)\)/)
+  assert.match(stub, /interface_unref\(\(const interface_t \*\)ptr\)/)
+  assert.match(stub, /interface_validate\(.*_ptr\(value\)\)/)
+})
+
 test('built-in emitters generate MoonBit externs and C stubs', () => {
   const model = createApiModel({
     headers: [
